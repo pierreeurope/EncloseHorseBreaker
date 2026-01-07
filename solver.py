@@ -140,6 +140,51 @@ def evaluate_walls(state: GameState, walls: list[int]) -> int:
     return solve(make_state_with_walls(state, walls)).total_score
 
 
+def evaluate_wall_swap(state: GameState, current_walls: list[int], remove_idx: int, add_idx: int) -> tuple[int, int]:
+    """
+    Evaluate the impact of swapping one wall position.
+    Returns: (new_score, delta_score)
+    Key insight: A swap is beneficial if it gains a cherry (3) + area (1) = 4+ points
+    while losing less than that.
+    """
+    if remove_idx not in current_walls or add_idx in current_walls:
+        return 0, 0
+    
+    # Current score
+    current_score = evaluate_walls(state, current_walls)
+    
+    # New walls
+    new_walls = [w for w in current_walls if w != remove_idx] + [add_idx]
+    new_score = evaluate_walls(state, new_walls)
+    
+    return new_score, new_score - current_score
+
+
+def get_cherry_neighbors(state: GameState, candidates: list[int], max_dist: int = 2) -> dict[int, list[int]]:
+    """
+    For each cherry, find candidate wall positions nearby.
+    This helps prioritize wall placements that might capture cherries.
+    """
+    cherry_positions = [i for i, c in enumerate(state.cherries) if c]
+    cherry_neighbors = {}
+    
+    for cherry_idx in cherry_positions:
+        cherry_row = cherry_idx // state.cols
+        cherry_col = cherry_idx % state.cols
+        neighbors = []
+        
+        for cand_idx in candidates:
+            cand_row = cand_idx // state.cols
+            cand_col = cand_idx % state.cols
+            dist = abs(cherry_row - cand_row) + abs(cherry_col - cand_col)
+            if dist <= max_dist:
+                neighbors.append(cand_idx)
+        
+        cherry_neighbors[cherry_idx] = neighbors
+    
+    return cherry_neighbors
+
+
 def fetch_daily_puzzle(date: str) -> dict:
     response = requests.get(f"https://enclose.horse/api/daily/{date}")
     response.raise_for_status()
@@ -233,16 +278,23 @@ def solve_smart_exhaustive(state: GameState, timeout: float = 120.0) -> Benchmar
     return BenchmarkResult("Smart Exhaustive", best_score, best_walls, time.time() - start, iterations)
 
 
-def solve_genetic_massive(state: GameState, pop_size: int = 300, generations: int = 5000) -> BenchmarkResult:
+def solve_genetic_massive(state: GameState, pop_size: int = 250, generations: int = 3500) -> BenchmarkResult:
     """
-    MASSIVE GENETIC: 5000 generations with large population.
+    GENETIC with cherry-aware mutations.
+    Optimized: plateaus around gen 2000-3000, so 3500 is sufficient.
     """
     start = time.time()
     candidates = find_candidate_walls(state)
     num_walls = min(state.budget, len(candidates))
     
     if not candidates:
-        return BenchmarkResult("Genetic 5K", 0, [], time.time() - start, 0)
+        return BenchmarkResult("Genetic", 0, [], time.time() - start, 0)
+    
+    # Pre-compute cherry neighbors for smart mutations
+    cherry_neighbors = get_cherry_neighbors(state, candidates)
+    all_cherry_candidates = set()
+    for neighbors in cherry_neighbors.values():
+        all_cherry_candidates.update(neighbors)
     
     def random_individual():
         return random.sample(candidates, num_walls)
@@ -252,8 +304,18 @@ def solve_genetic_massive(state: GameState, pop_size: int = 300, generations: in
         for _ in range(swaps):
             available = [c for c in candidates if c not in ind]
             if available and ind:
-                ind.pop(random.randrange(len(ind)))
-                ind.append(random.choice(available))
+                # Cherry-aware mutation: 30% chance to try cherry-adjacent positions
+                if random.random() < 0.3 and all_cherry_candidates:
+                    cherry_candidates = [c for c in available if c in all_cherry_candidates]
+                    if cherry_candidates:
+                        ind.pop(random.randrange(len(ind)))
+                        ind.append(random.choice(cherry_candidates))
+                    else:
+                        ind.pop(random.randrange(len(ind)))
+                        ind.append(random.choice(available))
+                else:
+                    ind.pop(random.randrange(len(ind)))
+                    ind.append(random.choice(available))
         return ind
     
     def crossover(p1, p2):
@@ -311,19 +373,26 @@ def solve_genetic_massive(state: GameState, pop_size: int = 300, generations: in
     return BenchmarkResult("Genetic 5K gen", best_score, best_walls, time.time() - start, iterations)
 
 
-def solve_sa_massive(state: GameState, total_iterations: int = 2000000) -> BenchmarkResult:
+def solve_sa_massive(state: GameState, total_iterations: int = 1200000) -> BenchmarkResult:
     """
-    MASSIVE SA: 2 million iterations with multiple restarts.
+    SA with cherry-aware swaps.
+    Optimized: improvements in first few restarts, so 6 restarts × 200K = 1.2M total.
     """
     start = time.time()
     candidates = find_candidate_walls(state)
     num_walls = min(state.budget, len(candidates))
     
     if not candidates:
-        return BenchmarkResult("SA 2M", 0, [], time.time() - start, 0)
+        return BenchmarkResult("SA", 0, [], time.time() - start, 0)
+    
+    # Pre-compute cherry neighbors
+    cherry_neighbors = get_cherry_neighbors(state, candidates)
+    all_cherry_candidates = set()
+    for neighbors in cherry_neighbors.values():
+        all_cherry_candidates.update(neighbors)
     
     best_score, best_walls = 0, []
-    num_restarts = 50
+    num_restarts = 6  # Optimized: most improvements in first few restarts
     iters_per_restart = total_iterations // num_restarts
     
     for restart in range(num_restarts):
@@ -335,7 +404,7 @@ def solve_sa_massive(state: GameState, total_iterations: int = 2000000) -> Bench
             best_walls = current_walls.copy()
         
         temp = 100.0
-        cooling = 1 - (4.0 / iters_per_restart)  # Cool to ~0.02 by end
+        cooling = 1 - (4.0 / iters_per_restart)
         
         for i in range(iters_per_restart):
             temp *= cooling
@@ -343,14 +412,29 @@ def solve_sa_massive(state: GameState, total_iterations: int = 2000000) -> Bench
             new_walls = current_walls.copy()
             available = [c for c in candidates if c not in new_walls]
             
-            # Swap 1-3 walls
-            swaps = 1 if random.random() < 0.6 else (2 if random.random() < 0.8 else 3)
-            for _ in range(swaps):
-                if available and new_walls:
+            # Cherry-aware swap: 40% chance to try cherry-adjacent positions
+            if available and new_walls and random.random() < 0.4 and all_cherry_candidates:
+                cherry_candidates = [c for c in available if c in all_cherry_candidates]
+                if cherry_candidates:
+                    # Remove a random wall, add cherry-adjacent one
+                    remove_idx = random.randrange(len(new_walls))
+                    removed = new_walls.pop(remove_idx)
+                    new_walls.append(random.choice(cherry_candidates))
+                    available = [c for c in candidates if c not in new_walls]
+                else:
+                    # Fallback to normal swap
                     new_walls.pop(random.randrange(len(new_walls)))
-                    w = random.choice(available)
-                    new_walls.append(w)
-                    available.remove(w)
+                    new_walls.append(random.choice(available))
+                    available.remove(new_walls[-1])
+            else:
+                # Normal swap
+                swaps = 1 if random.random() < 0.7 else 2
+                for _ in range(swaps):
+                    if available and new_walls:
+                        new_walls.pop(random.randrange(len(new_walls)))
+                        w = random.choice(available)
+                        new_walls.append(w)
+                        available.remove(w)
             
             new_score = evaluate_walls(state, new_walls)
             delta = new_score - current_score
@@ -361,9 +445,11 @@ def solve_sa_massive(state: GameState, total_iterations: int = 2000000) -> Bench
                 if current_score > best_score:
                     best_score = current_score
                     best_walls = current_walls.copy()
+        
+        if restart % 2 == 0:
+            print(f"    [SA] Restart {restart+1}/{num_restarts}: Best = {best_score}")
     
-    print(f"    [SA 2M] Final best: {best_score}")
-    return BenchmarkResult("SA 2M iter", best_score, best_walls, time.time() - start, total_iterations)
+    return BenchmarkResult("SA", best_score, best_walls, time.time() - start, total_iterations)
 
 
 def solve_random_massive(state: GameState, iterations: int = 500000) -> BenchmarkResult:
@@ -412,46 +498,85 @@ def solve_full_random_timed(state: GameState, timeout: float = 120.0) -> Benchma
 
 def solve_hybrid_aggressive(state: GameState) -> BenchmarkResult:
     """
-    HYBRID: Run genetic, then polish best with SA.
+    HYBRID: Run genetic, then polish best with cherry-aware SA.
+    Optimized: Genetic 3000 gen (plateaus ~2500), SA 4 restarts × 200K = 800K.
     """
     start = time.time()
     candidates = find_candidate_walls(state)
     num_walls = min(state.budget, len(candidates))
     
-    # Phase 1: Quick genetic to find good starting points
-    print("    [Hybrid] Phase 1: Genetic search...")
-    genetic_result = solve_genetic_massive(state, pop_size=200, generations=2000)
+    # Pre-compute cherry neighbors for SA phase
+    cherry_neighbors = get_cherry_neighbors(state, candidates)
+    all_cherry_candidates = set()
+    for neighbors in cherry_neighbors.values():
+        all_cherry_candidates.update(neighbors)
+    
+    # Phase 1: Genetic to find good starting points
+    print("    [Hybrid] Phase 1: Genetic search (3000 gen)...")
+    genetic_result = solve_genetic_massive(state, pop_size=250, generations=3000)
     best_score = genetic_result.score
     best_walls = genetic_result.walls.copy()
     
-    # Phase 2: Intensive SA from best solution
+    # Phase 2: Cherry-aware SA with restarts
     print(f"    [Hybrid] Phase 2: SA polish from score {best_score}...")
-    current_walls = best_walls.copy()
-    current_score = best_score
+    num_restarts = 4
+    iters_per_restart = 200000
     
-    temp = 50.0
-    for i in range(500000):
-        temp *= 0.99999
+    for restart in range(num_restarts):
+        if restart > 0 and random.random() < 0.3:
+            # Occasional random restart
+            current_walls = random.sample(candidates, num_walls)
+            current_score = evaluate_walls(state, current_walls)
+        else:
+            current_walls = best_walls.copy()
+            current_score = best_score
         
-        new_walls = current_walls.copy()
-        available = [c for c in candidates if c not in new_walls]
+        temp = 50.0
+        initial_temp = temp
         
-        if available and new_walls:
-            new_walls.pop(random.randrange(len(new_walls)))
-            new_walls.append(random.choice(available))
+        for i in range(iters_per_restart):
+            temp = initial_temp * (0.995 ** i)
+            
+            new_walls = current_walls.copy()
+            available = [c for c in candidates if c not in new_walls]
+            
+            # Cherry-aware swap: 40% chance to try cherry-adjacent positions
+            if available and new_walls and random.random() < 0.4 and all_cherry_candidates:
+                cherry_candidates = [c for c in available if c in all_cherry_candidates]
+                if cherry_candidates:
+                    remove_idx = random.randrange(len(new_walls))
+                    new_walls.pop(remove_idx)
+                    new_walls.append(random.choice(cherry_candidates))
+                else:
+                    # Fallback
+                    new_walls.pop(random.randrange(len(new_walls)))
+                    new_walls.append(random.choice(available))
+            else:
+                # Normal swap
+                if available and new_walls:
+                    swaps = 1 if random.random() < 0.7 else 2
+                    for _ in range(swaps):
+                        if available and new_walls:
+                            new_walls.pop(random.randrange(len(new_walls)))
+                            w = random.choice(available)
+                            new_walls.append(w)
+                            available.remove(w)
+            
+            new_score = evaluate_walls(state, new_walls)
+            delta = new_score - current_score
+            
+            if delta > 0 or (temp > 0.1 and random.random() < math.exp(delta / max(temp, 0.1))):
+                current_walls = new_walls
+                current_score = new_score
+                if current_score > best_score:
+                    best_score = current_score
+                    best_walls = current_walls.copy()
+                    print(f"    [Hybrid] SA improved to: {best_score} (restart {restart+1}, iter {i:,})")
         
-        new_score = evaluate_walls(state, new_walls)
-        delta = new_score - current_score
-        
-        if delta > 0 or (temp > 0.001 and random.random() < math.exp(delta / max(temp, 0.001))):
-            current_walls = new_walls
-            current_score = new_score
-            if current_score > best_score:
-                best_score = current_score
-                best_walls = current_walls.copy()
-                print(f"    [Hybrid] SA improved to: {best_score}")
+        if restart < num_restarts - 1:
+            print(f"    [Hybrid] Restart {restart+1}/{num_restarts} complete, best: {best_score}")
     
-    total_iters = genetic_result.iterations + 500000
+    total_iters = genetic_result.iterations + (num_restarts * iters_per_restart)
     return BenchmarkResult("Hybrid (Gen+SA)", best_score, best_walls, time.time() - start, total_iters)
 
 
@@ -887,15 +1012,15 @@ def run_all_solvers(state: GameState) -> list[BenchmarkResult]:
     results = []
     
     solvers = [
-        ("Chokepoint Guided", lambda: solve_chokepoint_guided(state)),
-        ("Mega Hybrid", lambda: solve_mega_hybrid(state)),
-        ("Ultimate 5min", lambda: solve_ultimate(state, time_limit=300)),
+        ("Genetic (cherry-aware)", lambda: solve_genetic_massive(state)),
+        ("SA (cherry-aware)", lambda: solve_sa_massive(state)),
+        ("Hybrid (Gen+SA)", lambda: solve_hybrid_aggressive(state)),
     ]
     
     for name, solver_fn in solvers:
         print(f"  Running {name}...")
         result = solver_fn()
-        print(f"    Final score: {result.score}")
+        print(f"    Final score: {result.score}\n")
         results.append(result)
     
     return results

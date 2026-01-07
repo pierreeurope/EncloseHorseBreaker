@@ -1,110 +1,184 @@
 # EncloseHorseBreaker 🐴
 
-A solver and analysis toolkit for [enclose.horse](https://enclose.horse/) - a puzzle game where you trap a horse in the largest possible enclosure.
+A solver for [enclose.horse](https://enclose.horse/) - a daily puzzle game where you trap a horse in the largest possible enclosure.
 
 ## What is enclose.horse?
 
 It's a daily puzzle game where you:
 1. Place walls on a grid to trap a horse
 2. The horse can move in 4 directions (not diagonally)
-3. If the horse can reach any edge, it escapes (score = 0)
-4. Your score = enclosed area + (cherries × 3)
-5. You have a limited wall budget
+3. Water (`~`) blocks movement
+4. If the horse can reach any edge, it escapes (score = 0)
+5. Your score = enclosed area + (cherries × 3)
+6. You have a limited wall budget
+
+## The Journey: From Heuristics to ASP
+
+### Phase 1: Reverse Engineering
+
+We started by scraping and analyzing the game:
+- Deobfuscated the minified JavaScript
+- Discovered the core algorithm: **BFS flood-fill** to check if horse can escape
+- Found the API endpoints for fetching puzzles and optimal solutions
+- Documented everything in `ANALYSIS.md`
+
+### Phase 2: Implementing Search Algorithms (The Hard Way)
+
+We tried many approaches to find optimal solutions:
+
+| Algorithm | Best Score | Time | % of Optimal |
+|-----------|-----------|------|--------------|
+| Greedy | ~20 | <1s | ~30% |
+| Simulated Annealing | 43 | 411s | 65% |
+| Genetic Algorithm | 44 | 60s | 67% |
+| Smart SA (pruned candidates) | 56 | 224s | 85% |
+| A* Search | 1 | 380s | 1.5% |
+| Beam Search | 3 | 60s | 4.5% |
+
+**Why was it so hard?**
+
+1. **Massive search space**: C(104, 12) ≈ 10^14 combinations
+2. **Interdependent walls**: The optimal solution requires ALL 12 walls to work together
+   - With 11 optimal walls: score = 0 (horse escapes)
+   - With 12 optimal walls: score = 66 (perfect enclosure)
+3. **Deceptive landscape**: Local optima everywhere, optimal is a needle in a haystack
+
+### Phase 3: The Breakthrough - Answer Set Programming
+
+Then we discovered that **the game itself uses ASP (Answer Set Programming)** with the Clingo solver!
+
+We found this on HackerNews:
+> "The site uses Answer Set Programming with the Clingo engine to compute the optimal solutions for smaller grids. Maximizing grids like this is probably NP-hard."
+
+The ASP approach is **declarative** - you describe WHAT a valid solution looks like, not HOW to find it:
+
+```asp
+% Place walls anywhere (choice)
+{ wall(R,C) } :- walkable(R,C), not horse(R,C).
+
+% Budget constraint
+:- #count { wall(R,C) } > budget.
+
+% Horse can't escape (reachability constraint)
+:- reachable(R,C), boundary(R,C).
+
+% Maximize enclosed area
+#maximize { 1,R,C : reachable(R,C) }.
+```
+
+**Result with Clingo:**
+
+| Algorithm | Score | Time | % of Optimal |
+|-----------|-------|------|--------------|
+| **ASP (Clingo)** | **66** | **0.31s** | **100%** ✅ |
+
+The ASP solver is **700x faster** and **guarantees the optimal solution**!
 
 ## Files
 
-- **`ANALYSIS.md`** - Complete reverse-engineering of the game: algorithm, API, data formats
-- **`solver.py`** - Python implementation with:
-  - Game state parser
-  - BFS flood-fill solver (same algorithm as the game)
-  - Greedy solver heuristic
-  - Brute force solver (for small grids)
-  - API client for fetching daily puzzles
+- **`solver_asp.py`** - The ASP/Clingo solver (recommended!)
+- **`solver.py`** - Original Python solver with various heuristic algorithms
+- **`ANALYSIS.md`** - Complete reverse-engineering of the game
+- **`ASP_EXPLAINED.md`** - Deep dive into Answer Set Programming
 
 ## Quick Start
 
+### Using the ASP Solver (Recommended)
+
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install clingo requests
 
-# Run the solver on today's puzzle
-python solver.py
+# Run on today's puzzle
+python solver_asp.py
+
+# Run on a specific date
+python solver_asp.py 2026-01-07
 ```
 
-## Example Output
+### Example Output
 
 ```
+🐴 enclose.horse Solver - ASP/Clingo Approach
+============================================================
 Fetching puzzle for 2026-01-07...
 
-Puzzle: Five of Cherries
-By: Shivers
-Budget: 12 walls
-Optimal score: 66
+📋 Puzzle: Five of Cherries by Shivers
+   Budget: 12 walls
+   Known optimal: 66
+   Grid: 12x14
 
---- Map ---
-~~..~~~.~~~~
-~C.C·······~
-··C······~··
-·C·C~~··~~·~
-~·~·~~·····~
-~··········~
-····~·~~···~
-~···~~H~····
-~···········
-~·····~~···~
-··~~··~~C·C~
-~·~······C·~
-~·······C·C~
-~·~~·~·~···~
+🔧 Running Clingo solver...
+    [Clingo] Generated ASP program (4383 chars)
+    [Clingo] Model 1: score 1, walls 11
+    ...
+    [Clingo] Model 16: score 66, walls 12
+    [Clingo] Found 17 models in 0.31s
 
---- Greedy Solver ---
-Found solution with score: 58
-Walls placed: 10 / 12
+============================================================
+RESULT
+============================================================
+Score: 66
+Optimal: 66
+Match: ✅ YES!
+Time: 0.31s
+
+📊 Solution:
+
+~~.#~~~#~~~~
+~C#©·······~
+..C#·····~·#
+.C.C~~··~~·~
+~.~.~~·····~
+~..#·······~
+....~·~~···~
+~...~~H~···#
+~....#·····#
+~.....~~···~
+..~~..~~©·©~
+~.~.....#©·~
+~.......C#©~
+~.~~.~.~..#~
 ```
 
-## The Algorithm
+## Key Learnings
 
-The game uses **BFS (Breadth-First Search)** to determine if the horse is enclosed:
+1. **Choose the right paradigm**: Constraint satisfaction problems are better solved declaratively than with search heuristics
 
-1. Start from horse position
-2. Expand to all reachable cells (not walls, not water)
-3. If any edge cell is reached → horse escapes
-4. Otherwise → count enclosed area
+2. **ASP is powerful**: For combinatorial optimization with complex constraints, ASP/Clingo can find guaranteed optimal solutions quickly
 
-See `ANALYSIS.md` for the full deobfuscated algorithm and API documentation.
+3. **The problem structure matters**: The interdependence of walls (need ALL of them for enclosure) makes gradient-based search ineffective
 
-## Solving Strategies
-
-The optimal solution problem is NP-hard (subset of cells to block all paths). Current approaches:
-
-1. **Greedy** (implemented): Block escape paths one by one
-2. **Brute Force** (implemented): Try all combinations (slow!)
-3. **Min-Cut**: Model as graph, find minimum edge cut
-4. **Genetic/MCTS**: Explore solution space with heuristics
+4. **Research existing solutions**: The game's own approach (ASP) was the key insight
 
 ## API Reference
 
 ```python
-from solver import fetch_daily_puzzle, parse_map, solve, greedy_solve
+from solver_asp import fetch_daily_puzzle, parse_map, solve_with_clingo
 
 # Fetch puzzle
 puzzle = fetch_daily_puzzle("2026-01-07")
 
 # Parse and solve
 state = parse_map(puzzle['map'], puzzle['budget'])
-walls, score = greedy_solve(state)
+score, walls, time = solve_with_clingo(state)
 
-print(f"Score: {score}, Optimal: {puzzle['optimalScore']}")
+print(f"Score: {score}, Optimal: {puzzle.get('optimalScore', 'unknown')}")
 ```
 
-## Contributing
+## Requirements
 
-Feel free to improve the solver! Some ideas:
-- Implement min-cut algorithm
-- Add Monte Carlo Tree Search
-- Create web interface
-- Optimize for speed
+- Python 3.10+
+- `clingo` - ASP solver
+- `requests` - HTTP client
+
+## Further Reading
+
+- **ASP_EXPLAINED.md** - Comprehensive guide to Answer Set Programming
+- **ANALYSIS.md** - Game reverse engineering details
+- [Potassco (Clingo)](https://potassco.org/) - The ASP solver we use
+- [enclose.horse](https://enclose.horse/) - Play the game!
 
 ## License
 
-MIT - Have fun!
+MIT - Have fun! 🐴
