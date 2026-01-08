@@ -1,0 +1,17 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd enclose-horse-web && npm ci
+    build:
+      commands:
+        - cd enclose-horse-web && npm run build
+  artifacts:
+    baseDirectory: enclose-horse-web/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - enclose-horse-web/node_modules/**/*
+
