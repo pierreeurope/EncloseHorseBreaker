@@ -1,0 +1,251 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-bottom: 20px;
+}
+
+/* Navbar - matching enclose.horse exactly */
+.navbar {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.navbar-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.navbar-row.navbar-row-subtitle {
+  justify-content: center;
+  margin-top: -2px;
+  margin-bottom: 8px;
+}
+
+.navbar-subtitle {
+  font-family: 'Schoolbell', cursive;
+  font-size: 16px;
+  color: #f1c40f;
+  letter-spacing: 1px;
+}
+
+.navbar-btn {
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-family: 'Schoolbell', cursive;
+  font-size: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+@media (hover: hover) {
+  .navbar-btn:hover:not(:disabled) {
+    color: #f1c40f;
+  }
+}
+
+.navbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.navbar-title {
+  font-family: 'Schoolbell', cursive;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.solved-badge {
+  background: #f1c40f;
+  color: #000;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+@media (min-width: 768px) {
+  .navbar-title {
+    font-size: 32px;
+  }
+}
+
+/* Grid area */
+.grid-area {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 16px;
+  position: relative;
+  z-index: 5;
+}
+
+/* Loading state */
+.loading {
+  text-align: center;
+  font-family: 'Schoolbell', cursive;
+  font-size: 20px;
+  padding: 40px;
+}
+
+.loading-horse {
+  font-size: 48px;
+  display: block;
+  animation: bounce 1s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Error state */
+.error {
+  text-align: center;
+  font-family: 'Schoolbell', cursive;
+  font-size: 18px;
+  padding: 40px;
+}
+
+.error p {
+  margin-bottom: 16px;
+}
+
+/* Bottom container - matching enclose.horse */
+.bottom-container {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px 16px;
+  position: relative;
+  z-index: 10;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  font-family: 'Schoolbell', cursive;
+  font-size: 22px;
+  margin-top: 6px;
+  padding: 0 6px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-label {
+  color: #fff;
+}
+
+.stat-value {
+  color: #fff;
+}
+
+.stat-value.gold {
+  color: #f1c40f;
+}
+
+.optimal-badge {
+  font-family: 'Schoolbell', cursive;
+  font-size: 16px;
+  color: #4ade80;
+  margin-top: 8px;
+  padding: 4px 12px;
+  background: rgba(74, 222, 128, 0.15);
+  border-radius: 4px;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.puzzle-info {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.puzzle-name {
+  font-family: 'Schoolbell', cursive;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Buttons - matching enclose.horse */
+.btn {
+  padding: 12px 20px;
+  border: 2px solid #fff;
+  background: transparent;
+  font-family: 'Schoolbell', cursive;
+  font-size: 20px;
+  color: #fff;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+@media (hover: hover) {
+  .btn:hover:not(:disabled) {
+    color: #f1c40f;
+    border-color: #f1c40f;
+  }
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Date navigation */
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-nav {
+  padding: 10px 16px;
+  font-size: 18px;
+}
+
+.date-display {
+  font-family: 'Schoolbell', cursive;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.8);
+  min-width: 100px;
+  text-align: center;
+}

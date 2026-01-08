@@ -1,5 +1,14 @@
 # EncloseHorseBreaker 🐴
 
+## TL;DR
+
+**Solver implemented + live results viewer:**  
+👉 **[YOUR_AMPLIFY_URL_HERE]**
+
+View the optimal solution for any daily puzzle - automatically fetched and displayed using the exact same rendering engine as the original game.
+
+---
+
 A solver for [enclose.horse](https://enclose.horse/) - a daily puzzle game where you trap a horse in the largest possible enclosure.
 
 ## What is enclose.horse?
@@ -80,6 +89,7 @@ The ASP solver is **700x faster** and **guarantees the optimal solution**!
 - **`solver.py`** - Original Python solver with various heuristic algorithms
 - **`ANALYSIS.md`** - Complete reverse-engineering of the game
 - **`ASP_EXPLAINED.md`** - Deep dive into Answer Set Programming
+- **`enclose-horse-web/`** - Web app that displays solved puzzles (see below)
 
 ## Quick Start
 
@@ -178,6 +188,72 @@ print(f"Score: {score}, Optimal: {puzzle.get('optimalScore', 'unknown')}")
 - **ANALYSIS.md** - Game reverse engineering details
 - [Potassco (Clingo)](https://potassco.org/) - The ASP solver we use
 - [enclose.horse](https://enclose.horse/) - Play the game!
+
+---
+
+## Web Viewer: How We Cloned enclose.horse
+
+The `enclose-horse-web/` folder contains a web app that displays the optimal solution for any daily puzzle, using **the exact same rendering engine** as the original game.
+
+### What We Copied
+
+To achieve pixel-perfect visual parity with enclose.horse, we downloaded:
+
+| Asset | Source | Purpose |
+|-------|--------|---------|
+| `play.js` | `https://enclose.horse/play.js` | The game's rendering engine (~200KB bundled JS) |
+| `Schoolbell-Regular.woff2` | `https://enclose.horse/fonts/` | The handwritten-style font |
+| `default.webp` | `https://enclose.horse/themes/` | Default theme sprite sheet |
+| `classic.webp` | `https://enclose.horse/themes/` | Classic theme sprite sheet |
+| `girl.webp` | `https://enclose.horse/themes/` | Girl theme sprite sheet |
+| `hot.webp` | `https://enclose.horse/themes/` | Hot theme sprite sheet |
+| `favicon.png` | `https://enclose.horse/` | Favicon |
+
+### How It Works
+
+1. **Fetch puzzle data** from enclose.horse API:
+   ```
+   GET https://enclose.horse/api/daily/{date}
+   ```
+
+2. **Fetch optimal solution** from their stats API:
+   ```
+   GET https://enclose.horse/api/levels/{levelId}/stats
+   → { optimalScore, optimalWalls: [...] }
+   ```
+
+3. **Pre-store the solution** in `localStorage` as if the user had already submitted it (this is how the game knows to display walls)
+
+4. **Set global variables** before loading `play.js`:
+   ```javascript
+   window.__DAILY_MODE__ = false;
+   window.__LEVEL__ = puzzleData;
+   ```
+
+5. **Load their `play.js`** which initializes the game canvas and renders with the pre-loaded solution
+
+### Deploy to AWS Amplify
+
+```bash
+cd enclose-horse-web
+npm install
+npm run build
+# Upload the dist/ folder to Amplify
+```
+
+Or connect the repo to Amplify for automatic deployments.
+
+### URL Parameters
+
+- `/solved.html` - Today's puzzle
+- `/solved.html?date=2026-01-04` - Specific date's puzzle
+
+### Credits
+
+- Original game: [enclose.horse](https://enclose.horse/) by [Shivers](https://x.com/thinkingshivers)
+- This is a fan project for educational purposes
+
+---
 
 ## License
 
