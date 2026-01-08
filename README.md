@@ -3,7 +3,7 @@
 ## TL;DR
 
 **Solver implemented + live results viewer:**  
-👉 **[YOUR_AMPLIFY_URL_HERE]**
+👉 **[website](https://main.d3e9go7tyt5l8r.amplifyapp.com/)**
 
 View the optimal solution for any daily puzzle - automatically fetched and displayed using the exact same rendering engine as the original game.
 
